@@ -9,6 +9,10 @@ import {
   formatWeight,
   gramsForBatch,
   GRAMS_PER_LB,
+  toMl,
+  fromMl,
+  formatVolume,
+  ML_PER_QUART,
 } from "./units";
 
 describe("pound <-> gram conversion", () => {
@@ -52,6 +56,29 @@ describe("formatWeight", () => {
 
   it("shows whole grams without decimals", () => {
     expect(formatWeight(1000, "g")).toBe("1000 g");
+  });
+});
+
+describe("volume conversion", () => {
+  it("converts a quart to mL", () => {
+    expect(toMl(1, "quart")).toBeCloseTo(946.353, 3);
+  });
+
+  it("there are 4 quarts in a gallon", () => {
+    expect(toMl(1, "gallon")).toBeCloseTo(toMl(4, "quart"), 2);
+  });
+
+  it("round-trips through every volume unit", () => {
+    for (const unit of ["cup", "pint", "quart", "gallon"] as const) {
+      expect(fromMl(toMl(2.5, unit), unit)).toBeCloseTo(2.5, 10);
+    }
+  });
+});
+
+describe("formatVolume", () => {
+  it("trims trailing zeros and pluralizes", () => {
+    expect(formatVolume(ML_PER_QUART * 2.5, "quart")).toBe("2.5 quarts");
+    expect(formatVolume(ML_PER_QUART, "quart")).toBe("1 quart");
   });
 });
 

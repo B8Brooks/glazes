@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import {
   ingredients,
+  glazes,
   recipes,
   recipeIngredients,
   batches,
@@ -11,7 +12,13 @@ import {
 import { eq, ilike, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { toGrams, gramsForBatch, type DisplayUnit } from "./units";
+import {
+  toGrams,
+  toMl,
+  gramsForBatch,
+  type DisplayUnit,
+  type VolumeUnit,
+} from "./units";
 
 function num(value: FormDataEntryValue | null): number {
   const n = parseFloat(String(value ?? ""));
@@ -30,6 +37,15 @@ function optStr(value: FormDataEntryValue | null): string | null {
 function asUnit(value: FormDataEntryValue | null): DisplayUnit {
   const s = str(value);
   return s === "kg" || s === "g" ? s : "lb";
+}
+
+function asVolumeUnit(value: FormDataEntryValue | null): VolumeUnit {
+  const s = str(value);
+  return s === "cup" || s === "pint" || s === "gallon" ? s : "quart";
+}
+
+function num0(value: number): number {
+  return Number.isFinite(value) ? value : 0;
 }
 
 // Find an existing material by name (case-insensitive) or create it at 0 stock.
@@ -151,6 +167,84 @@ export async function deleteMaterial(formData: FormData) {
 }
 
 // ---------------------------------------------------------------------------
+// Mixed glazes (finished buckets, tracked by volume)
+// ---------------------------------------------------------------------------
+
+function optId(value: FormDataEntryValue | null): number | null {
+  const n = num(value);
+  return n > 0 ? n : null;
+}
+
+export async function createGlaze(formData: FormData) {
+  const name = str(formData.get("name"));
+  if (!name) return;
+  const unit = asVolumeUnit(formData.get("displayVolumeUnit"));
+  const volume = num(formData.get("volume"));
+
+  await db.insert(glazes).values({
+    name,
+    recipeId: optId(formData.get("recipeId")),
+    volumeMl: toMl(volume, unit),
+    displayVolumeUnit: unit,
+    status: optStr(formData.get("status")),
+    notes: optStr(formData.get("notes")),
+  });
+
+  revalidatePath("/glazes");
+  redirect("/glazes");
+}
+
+export async function updateGlaze(formData: FormData) {
+  const id = num(formData.get("id"));
+  const name = str(formData.get("name"));
+  if (!id || !name) return;
+  const unit = asVolumeUnit(formData.get("displayVolumeUnit"));
+  const volume = num(formData.get("volume"));
+
+  await db
+    .update(glazes)
+    .set({
+      name,
+      recipeId: optId(formData.get("recipeId")),
+      volumeMl: toMl(volume, unit),
+      displayVolumeUnit: unit,
+      status: optStr(formData.get("status")),
+      notes: optStr(formData.get("notes")),
+      updatedAt: new Date(),
+    })
+    .where(eq(glazes.id, id));
+
+  revalidatePath("/glazes");
+  redirect("/glazes");
+}
+
+// Quick "used some" / "topped up" — sign comes from the button's `direction`.
+export async function adjustGlazeVolume(formData: FormData) {
+  const id = num(formData.get("id"));
+  const unit = asVolumeUnit(formData.get("unit"));
+  const amount = num(formData.get("amount"));
+  const direction = str(formData.get("direction")) === "use" ? -1 : 1;
+  if (!id || amount === 0) return;
+
+  await db
+    .update(glazes)
+    .set({
+      volumeMl: sql`${glazes.volumeMl} + ${direction * toMl(amount, unit)}`,
+      updatedAt: new Date(),
+    })
+    .where(eq(glazes.id, id));
+
+  revalidatePath("/glazes");
+}
+
+export async function deleteGlaze(formData: FormData) {
+  const id = num(formData.get("id"));
+  if (!id) return;
+  await db.delete(glazes).where(eq(glazes.id, id));
+  revalidatePath("/glazes");
+}
+
+// ---------------------------------------------------------------------------
 // Recipes
 // ---------------------------------------------------------------------------
 
@@ -221,6 +315,8 @@ export async function deleteRecipe(formData: FormData) {
 export async function mixBatch(input: {
   recipeId: number;
   batchGrams: number;
+  producedVolume?: number;
+  producedUnit?: VolumeUnit;
   notes?: string | null;
 }) {
   const { recipeId } = input;
@@ -235,10 +331,56 @@ export async function mixBatch(input: {
     .where(eq(recipeIngredients.recipeId, recipeId));
   if (!lines.length) throw new Error("This recipe has no ingredients yet.");
 
+  const producedVolume = num0(Number(input.producedVolume));
+  const producedUnit = input.producedUnit ?? "quart";
+  const producedMl = producedVolume > 0 ? toMl(producedVolume, producedUnit) : 0;
+
   await db.transaction(async (tx) => {
+    // If a finished volume was produced, find the glaze bucket linked to this
+    // recipe (auto-create one named after the recipe if none exists yet).
+    let glazeId: number | null = null;
+    if (producedMl > 0) {
+      const existing = await tx
+        .select({ id: glazes.id })
+        .from(glazes)
+        .where(eq(glazes.recipeId, recipeId))
+        .limit(1);
+      if (existing.length) {
+        glazeId = existing[0].id;
+      } else {
+        const recipe = await tx
+          .select({ name: recipes.name })
+          .from(recipes)
+          .where(eq(recipes.id, recipeId))
+          .limit(1);
+        const [created] = await tx
+          .insert(glazes)
+          .values({
+            name: recipe[0]?.name ?? "New glaze",
+            recipeId,
+            displayVolumeUnit: producedUnit,
+          })
+          .returning({ id: glazes.id });
+        glazeId = created.id;
+      }
+      await tx
+        .update(glazes)
+        .set({
+          volumeMl: sql`${glazes.volumeMl} + ${producedMl}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(glazes.id, glazeId));
+    }
+
     const [batch] = await tx
       .insert(batches)
-      .values({ recipeId, batchGrams, notes: input.notes ?? null })
+      .values({
+        recipeId,
+        batchGrams,
+        glazeId,
+        producedMl: producedMl > 0 ? producedMl : null,
+        notes: input.notes ?? null,
+      })
       .returning({ id: batches.id });
 
     for (const line of lines) {
@@ -259,6 +401,7 @@ export async function mixBatch(input: {
   });
 
   revalidatePath("/inventory");
+  revalidatePath("/glazes");
   revalidatePath(`/recipes/${recipeId}`);
 }
 
@@ -268,6 +411,12 @@ export async function undoBatch(formData: FormData) {
   if (!batchId) return;
 
   await db.transaction(async (tx) => {
+    const [batch] = await tx
+      .select()
+      .from(batches)
+      .where(eq(batches.id, batchId))
+      .limit(1);
+
     const lines = await tx
       .select()
       .from(batchLines)
@@ -281,9 +430,22 @@ export async function undoBatch(formData: FormData) {
         })
         .where(eq(ingredients.id, line.ingredientId));
     }
+
+    // Reverse the finished volume this batch added to a glaze bucket, if any.
+    if (batch?.glazeId && batch.producedMl) {
+      await tx
+        .update(glazes)
+        .set({
+          volumeMl: sql`${glazes.volumeMl} - ${batch.producedMl}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(glazes.id, batch.glazeId));
+    }
+
     await tx.delete(batches).where(eq(batches.id, batchId));
   });
 
   revalidatePath("/inventory");
+  revalidatePath("/glazes");
   if (recipeId) revalidatePath(`/recipes/${recipeId}`);
 }

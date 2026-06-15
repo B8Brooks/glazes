@@ -11,12 +11,16 @@ things are shown and entered.
 
 - **Recipes** — Write down a glaze by name and its ingredient percentages, just
   like a handwritten card. Typing a new ingredient name adds it to your
-  inventory automatically.
-- **Inventory** — Track how much of each material you have, in pounds (or kg/g).
-  Mark a reorder level to get a "Low — reorder" flag.
+  materials list automatically.
+- **Materials** — Track how much of each raw, dry material you have, in pounds
+  (or kg/g). Mark a reorder level to get a "Low — reorder" flag.
+- **Glazes** — Track your mixed, finished glaze buckets by **volume** (cups,
+  pints, quarts, gallons) with a quick consistency note (Good / Dryish / Chunky
+  / Empty). Quickly record using some or topping up.
 - **Mix a batch** — Enter a batch size in grams. The app figures out how much of
   each material you need, warns if you might be short, and subtracts what you
-  used from your inventory. Every batch can be undone.
+  used from your materials. Optionally record the volume made and it's added to
+  that glaze's bucket. Every batch can be undone (restores both).
 
 ## Tech
 
@@ -70,9 +74,9 @@ environment variable in Vercel. The browser will then ask for a password
 
 ## Project layout
 
-- `src/lib/units.ts` — pound/gram/kg conversions and batch math (the core).
-- `src/lib/actions.ts` — all data operations (materials, recipes, mixing, undo).
+- `src/lib/units.ts` — weight (lb/g/kg) and volume (cup/pint/quart/gallon) conversions and batch math (the core).
+- `src/lib/actions.ts` — all data operations (materials, glazes, recipes, mixing, undo).
 - `src/db/schema.ts` — database tables.
-- `src/app/` — the pages (`/recipes`, `/inventory`).
+- `src/app/` — the pages (`/recipes`, `/glazes`, `/inventory`).
 - `src/components/` — the recipe entry form and mix-a-batch panel.
 - `scripts/verify.ts` — an end-to-end integration check against a real database.

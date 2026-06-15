@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { mixBatch } from "@/lib/actions";
-import { gramsForBatch } from "@/lib/units";
+import { gramsForBatch, VOLUME_UNITS, type VolumeUnit } from "@/lib/units";
 
 type Line = {
   name: string;
@@ -18,6 +18,8 @@ export function MixBatchPanel({
   lines: Line[];
 }) {
   const [batchInput, setBatchInput] = useState("1000");
+  const [volumeInput, setVolumeInput] = useState("");
+  const [volumeUnit, setVolumeUnit] = useState<VolumeUnit>("quart");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -34,9 +36,17 @@ export function MixBatchPanel({
   function onMix() {
     setError(null);
     setDone(false);
+    const producedVolume = parseFloat(volumeInput);
     startTransition(async () => {
       try {
-        await mixBatch({ recipeId, batchGrams });
+        await mixBatch({
+          recipeId,
+          batchGrams,
+          producedVolume: Number.isFinite(producedVolume)
+            ? producedVolume
+            : undefined,
+          producedUnit: volumeUnit,
+        });
         setDone(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not mix batch.");
@@ -63,6 +73,35 @@ export function MixBatchPanel({
           className="w-32 rounded-lg border border-stone-300 px-3 py-2"
         />
         <span className="text-sm text-stone-500">grams</span>
+      </label>
+
+      <label className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-stone-700">
+          Volume made (optional)
+        </span>
+        <input
+          value={volumeInput}
+          onChange={(e) => setVolumeInput(e.target.value)}
+          type="number"
+          step="any"
+          min="0"
+          placeholder="e.g. 2"
+          className="w-24 rounded-lg border border-stone-300 px-3 py-2"
+        />
+        <select
+          value={volumeUnit}
+          onChange={(e) => setVolumeUnit(e.target.value as VolumeUnit)}
+          className="rounded-lg border border-stone-300 px-2 py-2"
+        >
+          {VOLUME_UNITS.map((u) => (
+            <option key={u.value} value={u.value}>
+              {u.value}
+            </option>
+          ))}
+        </select>
+        <span className="w-full text-xs text-stone-500 sm:w-auto">
+          Adds to this glaze&apos;s bucket on the Glazes page.
+        </span>
       </label>
 
       <table className="mt-4 w-full text-sm">

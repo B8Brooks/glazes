@@ -44,6 +44,22 @@ export const recipeIngredients = pgTable("recipe_ingredients", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+// Finished/mixed glaze buckets, tracked by volume (canonical milliliters).
+// Optionally linked to the recipe it was made from.
+export const glazes = pgTable("glazes", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  recipeId: integer("recipe_id").references(() => recipes.id, {
+    onDelete: "set null",
+  }),
+  volumeMl: doublePrecision("volume_ml").notNull().default(0),
+  displayVolumeUnit: text("display_volume_unit").notNull().default("quart"),
+  status: text("status"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // A mixed batch: the history log that powers auto-deduct and undo.
 export const batches = pgTable("batches", {
   id: serial("id").primaryKey(),
@@ -51,6 +67,12 @@ export const batches = pgTable("batches", {
     .notNull()
     .references(() => recipes.id, { onDelete: "cascade" }),
   batchGrams: doublePrecision("batch_grams").notNull(),
+  // If this batch added finished glaze to a bucket, record where and how much
+  // so undo can reverse the volume too.
+  glazeId: integer("glaze_id").references(() => glazes.id, {
+    onDelete: "set null",
+  }),
+  producedMl: doublePrecision("produced_ml"),
   notes: text("notes"),
   mixedAt: timestamp("mixed_at").notNull().defaultNow(),
 });
@@ -86,10 +108,21 @@ export const recipeIngredientsRelations = relations(
   })
 );
 
+export const glazesRelations = relations(glazes, ({ one }) => ({
+  recipe: one(recipes, {
+    fields: [glazes.recipeId],
+    references: [recipes.id],
+  }),
+}));
+
 export const batchesRelations = relations(batches, ({ one, many }) => ({
   recipe: one(recipes, {
     fields: [batches.recipeId],
     references: [recipes.id],
+  }),
+  glaze: one(glazes, {
+    fields: [batches.glazeId],
+    references: [glazes.id],
   }),
   lines: many(batchLines),
 }));
@@ -106,6 +139,7 @@ export const batchLinesRelations = relations(batchLines, ({ one }) => ({
 }));
 
 export type Ingredient = typeof ingredients.$inferSelect;
+export type Glaze = typeof glazes.$inferSelect;
 export type Recipe = typeof recipes.$inferSelect;
 export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
 export type Batch = typeof batches.$inferSelect;

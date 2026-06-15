@@ -6,12 +6,13 @@ import { eq, ilike, sql } from "drizzle-orm";
 import { db } from "../src/db/index";
 import {
   ingredients,
+  glazes,
   recipes,
   recipeIngredients,
   batches,
   batchLines,
 } from "../src/db/schema";
-import { toGrams, gramsForBatch } from "../src/lib/units";
+import { toGrams, toMl, gramsForBatch } from "../src/lib/units";
 
 let failures = 0;
 function check(label: string, cond: boolean, extra = "") {
@@ -41,6 +42,7 @@ async function main() {
   await db.delete(batchLines);
   await db.delete(batches);
   await db.delete(recipeIngredients);
+  await db.delete(glazes);
   await db.delete(recipes);
   await db.delete(ingredients);
 
@@ -79,17 +81,25 @@ async function main() {
     silicaExists.length === 1 && silicaExists[0].quantityGrams === 0
   );
 
-  // 3. Mix a 1000 g batch (transaction: log + deduct)
+  // 3. Mix a 1000 g batch that also produces 2 quarts of finished glaze
   const batchGrams = 1000;
+  const producedMl = toMl(2, "quart");
   const lines = await db
     .select()
     .from(recipeIngredients)
     .where(eq(recipeIngredients.recipeId, recipe.id));
   let batchId = 0;
+  let glazeId = 0;
   await db.transaction(async (tx) => {
+    // auto-create the glaze bucket for this recipe and add the produced volume
+    const [g] = await tx
+      .insert(glazes)
+      .values({ name: recipe.name, recipeId: recipe.id, volumeMl: producedMl })
+      .returning({ id: glazes.id });
+    glazeId = g.id;
     const [b] = await tx
       .insert(batches)
-      .values({ recipeId: recipe.id, batchGrams })
+      .values({ recipeId: recipe.id, batchGrams, glazeId: g.id, producedMl })
       .returning({ id: batches.id });
     batchId = b.id;
     for (const l of lines) {
@@ -103,6 +113,15 @@ async function main() {
         .where(eq(ingredients.id, l.ingredientId));
     }
   });
+
+  const glazeAfterMix = (
+    await db.select().from(glazes).where(eq(glazes.id, glazeId))
+  )[0];
+  check(
+    "glaze bucket got 2 quarts after mixing",
+    approx(glazeAfterMix.volumeMl, toMl(2, "quart"), 1e-6),
+    `${glazeAfterMix.volumeMl} mL`
+  );
 
   const feldsparAfter = (
     await db.select().from(ingredients).where(eq(ingredients.id, feldsparId))
@@ -121,8 +140,9 @@ async function main() {
     `${silicaAfter.quantityGrams} g`
   );
 
-  // 4. Undo the batch -> inventory restored exactly
+  // 4. Undo the batch -> materials AND glaze volume restored exactly
   await db.transaction(async (tx) => {
+    const [b] = await tx.select().from(batches).where(eq(batches.id, batchId));
     const bl = await tx
       .select()
       .from(batchLines)
@@ -133,8 +153,23 @@ async function main() {
         .set({ quantityGrams: sql`${ingredients.quantityGrams} + ${l.gramsDeducted}` })
         .where(eq(ingredients.id, l.ingredientId));
     }
+    if (b?.glazeId && b.producedMl) {
+      await tx
+        .update(glazes)
+        .set({ volumeMl: sql`${glazes.volumeMl} - ${b.producedMl}` })
+        .where(eq(glazes.id, b.glazeId));
+    }
     await tx.delete(batches).where(eq(batches.id, batchId));
   });
+
+  const glazeAfterUndo = (
+    await db.select().from(glazes).where(eq(glazes.id, glazeId))
+  )[0];
+  check(
+    "glaze bucket back to 0 mL after undo",
+    approx(glazeAfterUndo.volumeMl, 0, 1e-6),
+    `${glazeAfterUndo.volumeMl} mL`
+  );
 
   const feldsparRestored = (
     await db.select().from(ingredients).where(eq(ingredients.id, feldsparId))
