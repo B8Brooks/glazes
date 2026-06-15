@@ -67,7 +67,7 @@ environment variable in Vercel. The browser will then ask for a password
 | Command | What it does |
 |---|---|
 | `npm run dev` | Run locally for development |
-| `npm test` | Run the unit tests (weight conversions + batch math) |
+| `npm test` | Run the tests. Conversion/batch-math unit tests always run; the action-flow integration tests run too when `DATABASE_URL` points at a (throwaway) Postgres, and skip otherwise. |
 | `npm run db:push` | Create/update database tables from the schema |
 | `npm run db:seed` | Add example starter data |
 | `npm run db:studio` | Browse the database in a web UI |
