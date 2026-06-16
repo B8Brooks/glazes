@@ -34,6 +34,7 @@ export default function RootLayout({
             <NavLink href="/recipes" label="Recipes" />
             <NavLink href="/glazes" label="Glazes" />
             <NavLink href="/inventory" label="Materials" />
+            <NavLink href="/backup" label="Backup" />
           </nav>
         </header>
         <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>

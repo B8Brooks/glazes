@@ -29,6 +29,24 @@ Vercel. Single user, no login by default.
 
 ---
 
+## Data safety & backups
+
+Data is stored in the Neon Postgres database, which is **separate from the app
+code**. Deploying or updating the tool only changes code on Vercel — it never
+touches saved materials, recipes, or glazes.
+
+Two rules keep it that way:
+
+1. **Migrations are additive only.** When the schema changes, only *add* tables
+   or columns — never `DROP` or rename a column in a migration. This guarantees a
+   new version can't delete existing data.
+2. **Keep your own backups.** The in-app **Backup** page
+   (`/backup`) downloads spreadsheet CSVs and a complete JSON snapshot. Save one
+   somewhere safe (e.g. Google Drive) every so often — that file is the restore
+   point if anything ever goes wrong.
+
+---
+
 ## Setup (one time)
 
 You'll need a free [Neon](https://neon.tech) database and a free
