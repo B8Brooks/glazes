@@ -26,8 +26,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen">
-        <header className="border-b border-stone-200 bg-white">
-          <nav className="mx-auto flex max-w-3xl items-center gap-1 px-4 py-3">
+        <header className="border-b border-stone-200 bg-white print:hidden">
+          <nav className="mx-auto flex max-w-3xl flex-wrap items-center gap-1 px-4 py-3">
             <Link href="/" className="mr-2 text-lg font-bold text-stone-900">
               🏺 Glazes
             </Link>
@@ -35,6 +35,7 @@ export default function RootLayout({
             <NavLink href="/glazes" label="Glazes" />
             <NavLink href="/inventory" label="Materials" />
             <NavLink href="/backup" label="Backup" />
+            <NavLink href="/help" label="Help" />
           </nav>
         </header>
         <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>
