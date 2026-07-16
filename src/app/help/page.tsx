@@ -160,8 +160,9 @@ export default function HelpPage() {
               quart? Type 1, pick quarts, tap <B>Use</B>.
             </>,
             <>
-              Tap a glaze&apos;s name to change anything about it — including
-              its consistency: <B>Good, Dryish, Chunky, or Empty</B>.
+              Tap <B>Edit</B> on a glaze to change anything about it — its
+              name, the amount, or its consistency:{" "}
+              <B>Good, Dryish, Chunky, or Empty</B>.
             </>,
             <>
               A bucket can never go below empty — if you use the last of it,
@@ -180,7 +181,7 @@ export default function HelpPage() {
               tap <B>Add</B>.
             </>,
             <>
-              Tap a material&apos;s name to set{" "}
+              Tap <B>Edit</B> on a material to fix its name or set{" "}
               <B>&ldquo;reorder when below&rdquo;</B> — then the home page will
               tell you when you&apos;re running low.
             </>,

@@ -127,15 +127,23 @@ export default async function InventoryPage({
                     </button>
                   </form>
 
-                  <form action={deleteMaterial} className="ml-auto">
-                    <input type="hidden" name="id" value={m.id} />
-                    <ConfirmButton
-                      message={`Delete "${m.name}"? This can't be undone.`}
-                      className="rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
+                  <div className="ml-auto flex items-center gap-1">
+                    <Link
+                      href={`/inventory/${m.id}`}
+                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
                     >
-                      Delete
-                    </ConfirmButton>
-                  </form>
+                      Edit
+                    </Link>
+                    <form action={deleteMaterial}>
+                      <input type="hidden" name="id" value={m.id} />
+                      <ConfirmButton
+                        message={`Delete "${m.name}"? This can't be undone.`}
+                        className="rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        Delete
+                      </ConfirmButton>
+                    </form>
+                  </div>
                 </div>
               </li>
             );

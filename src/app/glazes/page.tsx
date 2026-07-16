@@ -143,15 +143,23 @@ export default async function GlazesPage({
                     </button>
                   </form>
 
-                  <form action={deleteGlaze} className="ml-auto">
-                    <input type="hidden" name="id" value={g.id} />
-                    <ConfirmButton
-                      message={`Delete "${g.name}"? This can't be undone.`}
-                      className="rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
+                  <div className="ml-auto flex items-center gap-1">
+                    <Link
+                      href={`/glazes/${g.id}`}
+                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
                     >
-                      Delete
-                    </ConfirmButton>
-                  </form>
+                      Edit
+                    </Link>
+                    <form action={deleteGlaze}>
+                      <input type="hidden" name="id" value={g.id} />
+                      <ConfirmButton
+                        message={`Delete "${g.name}"? This can't be undone.`}
+                        className="rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        Delete
+                      </ConfirmButton>
+                    </form>
+                  </div>
                 </div>
               </li>
             );
