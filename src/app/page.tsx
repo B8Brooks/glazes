@@ -1,6 +1,36 @@
 import Link from "next/link";
+import { db } from "@/db";
+import { glazes, ingredients } from "@/db/schema";
+import { and, inArray, isNotNull, sql } from "drizzle-orm";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+function AlertChip({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-200"
+    >
+      {children}
+    </Link>
+  );
+}
+
+export default async function Home() {
+  const [lowMaterials] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(ingredients)
+    .where(
+      and(
+        isNotNull(ingredients.reorderThresholdGrams),
+        sql`${ingredients.quantityGrams} <= ${ingredients.reorderThresholdGrams}`
+      )
+    );
+  const [needAttention] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(glazes)
+    .where(inArray(glazes.status, ["Dryish", "Chunky", "Empty"]));
+
   return (
     <div className="space-y-6">
       <div>
@@ -12,6 +42,25 @@ export default function Home() {
           have left.
         </p>
       </div>
+
+      {(lowMaterials.count > 0 || needAttention.count > 0) && (
+        <div className="flex flex-wrap gap-2">
+          {lowMaterials.count > 0 && (
+            <AlertChip href="/inventory">
+              {lowMaterials.count}{" "}
+              {lowMaterials.count === 1 ? "material is" : "materials are"} low —
+              time to reorder
+            </AlertChip>
+          )}
+          {needAttention.count > 0 && (
+            <AlertChip href="/glazes">
+              {needAttention.count}{" "}
+              {needAttention.count === 1 ? "bucket needs" : "buckets need"}{" "}
+              attention
+            </AlertChip>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Link

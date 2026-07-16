@@ -151,14 +151,38 @@ export async function deleteMaterial(formData: FormData) {
   const id = num(formData.get("id"));
   if (!id) return;
 
-  const used = await db
+  // A material can't be deleted while a recipe or a recorded batch still
+  // points at it (restrict FKs). Explain in plain language instead of crashing.
+  const [material] = await db
+    .select({ name: ingredients.name })
+    .from(ingredients)
+    .where(eq(ingredients.id, id))
+    .limit(1);
+  const name = material?.name ?? "This material";
+
+  const usedInRecipe = await db
     .select({ id: recipeIngredients.id })
     .from(recipeIngredients)
     .where(eq(recipeIngredients.ingredientId, id))
     .limit(1);
-  if (used.length) {
-    throw new Error(
-      "This material is used in a recipe. Remove it from the recipe first."
+  if (usedInRecipe.length) {
+    redirect(
+      `/inventory?error=${encodeURIComponent(
+        `"${name}" is used in a recipe, so it can't be deleted. Remove it from the recipe first.`
+      )}`
+    );
+  }
+
+  const usedInBatch = await db
+    .select({ id: batchLines.id })
+    .from(batchLines)
+    .where(eq(batchLines.ingredientId, id))
+    .limit(1);
+  if (usedInBatch.length) {
+    redirect(
+      `/inventory?error=${encodeURIComponent(
+        `"${name}" is part of your batch history, so it can't be deleted. Undo those batches first if you really want to remove it.`
+      )}`
     );
   }
 
@@ -219,6 +243,7 @@ export async function updateGlaze(formData: FormData) {
 }
 
 // Quick "used some" / "topped up" — sign comes from the button's `direction`.
+// A bucket can never go below empty; landing on empty labels it "Empty".
 export async function adjustGlazeVolume(formData: FormData) {
   const id = num(formData.get("id"));
   const unit = asVolumeUnit(formData.get("unit"));
@@ -226,10 +251,14 @@ export async function adjustGlazeVolume(formData: FormData) {
   const direction = str(formData.get("direction")) === "use" ? -1 : 1;
   if (!id || amount === 0) return;
 
+  const newVolume = sql`GREATEST(0, ${glazes.volumeMl} + ${
+    direction * toMl(amount, unit)
+  })`;
   await db
     .update(glazes)
     .set({
-      volumeMl: sql`${glazes.volumeMl} + ${direction * toMl(amount, unit)}`,
+      volumeMl: newVolume,
+      status: sql`CASE WHEN ${newVolume} <= 0 THEN 'Empty' ELSE ${glazes.status} END`,
       updatedAt: new Date(),
     })
     .where(eq(glazes.id, id));
@@ -431,12 +460,13 @@ export async function undoBatch(formData: FormData) {
         .where(eq(ingredients.id, line.ingredientId));
     }
 
-    // Reverse the finished volume this batch added to a glaze bucket, if any.
+    // Reverse the finished volume this batch added to a glaze bucket, if any
+    // (never below empty — she may have used some since mixing).
     if (batch?.glazeId && batch.producedMl) {
       await tx
         .update(glazes)
         .set({
-          volumeMl: sql`${glazes.volumeMl} - ${batch.producedMl}`,
+          volumeMl: sql`GREATEST(0, ${glazes.volumeMl} - ${batch.producedMl})`,
           updatedAt: new Date(),
         })
         .where(eq(glazes.id, batch.glazeId));

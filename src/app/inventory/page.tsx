@@ -1,17 +1,24 @@
 import Link from "next/link";
 import { db } from "@/db";
 import { ingredients } from "@/db/schema";
-import { asc } from "drizzle-orm";
+import { asc, ilike } from "drizzle-orm";
 import { formatWeight, type DisplayUnit, DISPLAY_UNITS } from "@/lib/units";
 import { addStock, deleteMaterial } from "@/lib/actions";
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { SearchBox } from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
-export default async function InventoryPage() {
-  const rows = await db
-    .select()
-    .from(ingredients)
-    .orderBy(asc(ingredients.name));
+export default async function InventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; error?: string }>;
+}) {
+  const { q, error } = await searchParams;
+  const query = db.select().from(ingredients).orderBy(asc(ingredients.name));
+  const rows = q?.trim()
+    ? await query.where(ilike(ingredients.name, `%${q.trim()}%`))
+    : await query;
 
   return (
     <div className="space-y-5">
@@ -25,10 +32,25 @@ export default async function InventoryPage() {
         </Link>
       </div>
 
+      {error && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <span>{error}</span>
+          <Link
+            href="/inventory"
+            className="shrink-0 font-medium text-amber-900 hover:underline"
+          >
+            Dismiss
+          </Link>
+        </div>
+      )}
+
+      <SearchBox placeholder="Find a material…" />
+
       {rows.length === 0 ? (
         <p className="rounded-xl border border-dashed border-stone-300 p-6 text-center text-stone-500">
-          No materials yet. Add your first one, or it will appear here
-          automatically when you use it in a recipe.
+          {q?.trim()
+            ? `No materials match "${q.trim()}".`
+            : "No materials yet. Add your first one, or it will appear here automatically when you use it in a recipe."}
         </p>
       ) : (
         <ul className="space-y-3">
@@ -83,13 +105,13 @@ export default async function InventoryPage() {
                         step="any"
                         min="0"
                         placeholder="0"
-                        className="mt-1 block w-24 rounded-lg border border-stone-300 px-2 py-1 text-sm"
+                        className="mt-1 block w-24 rounded-lg border border-stone-300 px-2 py-2 text-sm"
                       />
                     </label>
                     <select
                       name="unit"
                       defaultValue={unit}
-                      className="rounded-lg border border-stone-300 px-2 py-1 text-sm"
+                      className="rounded-lg border border-stone-300 px-2 py-2 text-sm"
                     >
                       {DISPLAY_UNITS.map((u) => (
                         <option key={u.value} value={u.value}>
@@ -99,7 +121,7 @@ export default async function InventoryPage() {
                     </select>
                     <button
                       type="submit"
-                      className="rounded-lg border border-stone-300 px-3 py-1 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
                     >
                       Add
                     </button>
@@ -107,12 +129,12 @@ export default async function InventoryPage() {
 
                   <form action={deleteMaterial} className="ml-auto">
                     <input type="hidden" name="id" value={m.id} />
-                    <button
-                      type="submit"
-                      className="rounded-lg px-2 py-1 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
+                    <ConfirmButton
+                      message={`Delete "${m.name}"? This can't be undone.`}
+                      className="rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
                     >
                       Delete
-                    </button>
+                    </ConfirmButton>
                   </form>
                 </div>
               </li>

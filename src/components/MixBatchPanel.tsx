@@ -95,7 +95,7 @@ export function MixBatchPanel({
         >
           {VOLUME_UNITS.map((u) => (
             <option key={u.value} value={u.value}>
-              {u.value}
+              {u.label}
             </option>
           ))}
         </select>
@@ -125,6 +125,9 @@ export function MixBatchPanel({
                 }`}
               >
                 {p.availableGrams.toFixed(0)} g
+                {p.short && (
+                  <span className="block text-xs font-normal">not enough</span>
+                )}
               </td>
             </tr>
           ))}

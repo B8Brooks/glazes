@@ -1,15 +1,22 @@
 import Link from "next/link";
 import { db } from "@/db";
 import { glazes, recipes } from "@/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, ilike } from "drizzle-orm";
 import { formatVolume, VOLUME_UNITS, type VolumeUnit } from "@/lib/units";
 import { statusBadgeClass } from "@/lib/glazeStatus";
 import { adjustGlazeVolume, deleteGlaze } from "@/lib/actions";
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { SearchBox } from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
-export default async function GlazesPage() {
-  const rows = await db
+export default async function GlazesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  const query = db
     .select({
       id: glazes.id,
       name: glazes.name,
@@ -23,6 +30,9 @@ export default async function GlazesPage() {
     .from(glazes)
     .leftJoin(recipes, eq(glazes.recipeId, recipes.id))
     .orderBy(asc(glazes.name));
+  const rows = q?.trim()
+    ? await query.where(ilike(glazes.name, `%${q.trim()}%`))
+    : await query;
 
   return (
     <div className="space-y-5">
@@ -36,10 +46,13 @@ export default async function GlazesPage() {
         </Link>
       </div>
 
+      <SearchBox placeholder="Find a glaze…" />
+
       {rows.length === 0 ? (
         <p className="rounded-xl border border-dashed border-stone-300 p-6 text-center text-stone-500">
-          No mixed glazes yet. Add a bucket you have on hand, or it will appear
-          here when you record the volume made while mixing a batch.
+          {q?.trim()
+            ? `No glazes match "${q.trim()}".`
+            : "No mixed glazes yet. Add a bucket you have on hand, or it will appear here when you record the volume made while mixing a batch."}
         </p>
       ) : (
         <ul className="space-y-3">
@@ -98,17 +111,17 @@ export default async function GlazesPage() {
                         step="any"
                         min="0"
                         placeholder="0"
-                        className="mt-1 block w-20 rounded-lg border border-stone-300 px-2 py-1 text-sm"
+                        className="mt-1 block w-20 rounded-lg border border-stone-300 px-2 py-2 text-sm"
                       />
                     </label>
                     <select
                       name="unit"
                       defaultValue={unit}
-                      className="rounded-lg border border-stone-300 px-2 py-1 text-sm"
+                      className="rounded-lg border border-stone-300 px-2 py-2 text-sm"
                     >
                       {VOLUME_UNITS.map((u) => (
                         <option key={u.value} value={u.value}>
-                          {u.value}
+                          {u.label}
                         </option>
                       ))}
                     </select>
@@ -116,7 +129,7 @@ export default async function GlazesPage() {
                       type="submit"
                       name="direction"
                       value="use"
-                      className="rounded-lg border border-stone-300 px-3 py-1 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
                     >
                       Use
                     </button>
@@ -124,7 +137,7 @@ export default async function GlazesPage() {
                       type="submit"
                       name="direction"
                       value="add"
-                      className="rounded-lg border border-stone-300 px-3 py-1 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
                     >
                       Add
                     </button>
@@ -132,12 +145,12 @@ export default async function GlazesPage() {
 
                   <form action={deleteGlaze} className="ml-auto">
                     <input type="hidden" name="id" value={g.id} />
-                    <button
-                      type="submit"
-                      className="rounded-lg px-2 py-1 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
+                    <ConfirmButton
+                      message={`Delete "${g.name}"? This can't be undone.`}
+                      className="rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-red-50 hover:text-red-600"
                     >
                       Delete
-                    </button>
+                    </ConfirmButton>
                   </form>
                 </div>
               </li>

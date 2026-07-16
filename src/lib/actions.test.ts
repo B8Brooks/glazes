@@ -2,8 +2,30 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // The actions are server actions that call Next.js request-scoped helpers.
 // Mock those so the real action code runs outside a request during tests.
+// redirect() must THROW like the real one does — action code relies on it
+// stopping execution (e.g. deleteMaterial's "in use" guards).
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("next/navigation", () => ({ redirect: () => {} }));
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => {
+    throw Object.assign(new Error(`NEXT_REDIRECT:${url}`), {
+      digest: "NEXT_REDIRECT",
+    });
+  },
+}));
+
+// Await an action, swallowing only the redirect "error" (which means success
+// or an intentional redirect-with-message). Returns the redirect URL if any.
+async function ignoreRedirect(p: Promise<unknown>): Promise<string | null> {
+  try {
+    await p;
+    return null;
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("NEXT_REDIRECT:")) {
+      return e.message.slice("NEXT_REDIRECT:".length);
+    }
+    throw e;
+  }
+}
 
 import { db } from "@/db";
 import {
@@ -21,6 +43,7 @@ import {
   undoBatch,
   saveRecipe,
   adjustGlazeVolume,
+  deleteMaterial,
 } from "./actions";
 
 // Integration tests need a real Postgres. Skipped when DATABASE_URL is unset
@@ -133,13 +156,15 @@ describe.skipIf(!hasDb)("action flows (integration)", () => {
   });
 
   it("saveRecipe auto-creates a new ingredient only once (case-insensitive)", async () => {
-    await saveRecipe({
-      name: "New Glaze",
-      lines: [
-        { name: "Nepheline Syenite", percentage: 50 },
-        { name: "nepheline syenite", percentage: 50 }, // different case, same material
-      ],
-    });
+    await ignoreRedirect(
+      saveRecipe({
+        name: "New Glaze",
+        lines: [
+          { name: "Nepheline Syenite", percentage: 50 },
+          { name: "nepheline syenite", percentage: 50 }, // different case, same material
+        ],
+      })
+    );
 
     const matches = await db
       .select()
@@ -167,5 +192,44 @@ describe.skipIf(!hasDb)("action flows (integration)", () => {
     vol = (await db.select().from(glazes).where(eq(glazes.id, glaze.id)))[0]
       .volumeMl;
     expect(vol).toBeCloseTo(toMl(1, "quart") + toMl(2, "cup"), 6);
+  });
+
+  it("adjustGlazeVolume never goes below empty and marks the bucket Empty", async () => {
+    const [glaze] = await db
+      .insert(glazes)
+      .values({ name: "Apricot", volumeMl: toMl(1, "quart"), status: "Dryish" })
+      .returning();
+
+    // Use 2 quarts from a 1-quart bucket -> clamps to 0, status becomes Empty.
+    await adjustGlazeVolume(
+      fd({ id: glaze.id, amount: 2, unit: "quart", direction: "use" })
+    );
+    const after = (
+      await db.select().from(glazes).where(eq(glazes.id, glaze.id))
+    )[0];
+    expect(after.volumeMl).toBe(0);
+    expect(after.status).toBe("Empty");
+  });
+
+  it("deleteMaterial is blocked with a friendly redirect when in use (recipe or batch history)", async () => {
+    const { feldspar, silica, recipe } = await seedRecipe(40, 60);
+
+    // Blocked: used by a recipe.
+    const url1 = await ignoreRedirect(deleteMaterial(fd({ id: feldspar.id })));
+    expect(url1).toContain("/inventory?error=");
+    expect(
+      await db.select().from(ingredients).where(eq(ingredients.id, feldspar.id))
+    ).toHaveLength(1);
+
+    // Blocked: no recipe usage anymore, but present in batch history.
+    await mixBatch({ recipeId: recipe.id, batchGrams: 1000 });
+    await db
+      .delete(recipeIngredients)
+      .where(eq(recipeIngredients.ingredientId, silica.id));
+    const url2 = await ignoreRedirect(deleteMaterial(fd({ id: silica.id })));
+    expect(url2).toContain("/inventory?error=");
+    expect(
+      await db.select().from(ingredients).where(eq(ingredients.id, silica.id))
+    ).toHaveLength(1);
   });
 });

@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { asc, desc, eq } from "drizzle-orm";
 import { MixBatchPanel } from "@/components/MixBatchPanel";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { deleteRecipe, undoBatch } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
@@ -64,12 +65,12 @@ export default async function RecipeDetailPage({
           </Link>
           <form action={deleteRecipe}>
             <input type="hidden" name="id" value={recipe.id} />
-            <button
-              type="submit"
+            <ConfirmButton
+              message={`Delete the recipe "${recipe.name}"? This can't be undone.`}
               className="rounded-lg px-3 py-2 text-stone-400 hover:bg-red-50 hover:text-red-600"
             >
               Delete
-            </button>
+            </ConfirmButton>
           </form>
         </div>
       </div>
@@ -121,12 +122,12 @@ export default async function RecipeDetailPage({
                 <form action={undoBatch}>
                   <input type="hidden" name="batchId" value={b.id} />
                   <input type="hidden" name="recipeId" value={recipe.id} />
-                  <button
-                    type="submit"
-                    className="rounded-lg px-2 py-1 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+                  <ConfirmButton
+                    message="Undo this batch? The materials it used will be added back to your inventory."
+                    className="rounded-lg px-3 py-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
                   >
                     Undo
-                  </button>
+                  </ConfirmButton>
                 </form>
               </li>
             ))}

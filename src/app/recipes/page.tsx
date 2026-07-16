@@ -1,12 +1,21 @@
 import Link from "next/link";
 import { db } from "@/db";
 import { recipes } from "@/db/schema";
-import { asc } from "drizzle-orm";
+import { asc, ilike } from "drizzle-orm";
+import { SearchBox } from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
-export default async function RecipesPage() {
-  const rows = await db.select().from(recipes).orderBy(asc(recipes.name));
+export default async function RecipesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  const query = db.select().from(recipes).orderBy(asc(recipes.name));
+  const rows = q?.trim()
+    ? await query.where(ilike(recipes.name, `%${q.trim()}%`))
+    : await query;
 
   return (
     <div className="space-y-5">
@@ -20,9 +29,13 @@ export default async function RecipesPage() {
         </Link>
       </div>
 
+      <SearchBox placeholder="Find a recipe…" />
+
       {rows.length === 0 ? (
         <p className="rounded-xl border border-dashed border-stone-300 p-6 text-center text-stone-500">
-          No recipes yet. Add your first glaze recipe.
+          {q?.trim()
+            ? `No recipes match "${q.trim()}".`
+            : "No recipes yet. Add your first glaze recipe."}
         </p>
       ) : (
         <ul className="space-y-2">
