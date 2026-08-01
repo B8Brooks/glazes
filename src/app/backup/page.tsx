@@ -54,7 +54,7 @@ export default function BackupPage() {
         <DownloadLink
           href="/api/export/backup"
           title="Complete backup (JSON)"
-          desc="A full, exact copy of everything — keep this as your restore file."
+          desc="A full, exact copy of everything — keep this file safe; Brooks can restore everything from it."
         />
       </div>
 

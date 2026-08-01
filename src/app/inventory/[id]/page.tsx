@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { ingredients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { MaterialForm } from "@/components/MaterialForm";
+import { BackLink } from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export default async function EditMaterialPage({
 
   return (
     <div className="space-y-5">
+      <BackLink href="/inventory" label="Materials" />
       <h1 className="text-2xl font-bold text-stone-900">Edit material</h1>
       <MaterialForm material={material} />
     </div>

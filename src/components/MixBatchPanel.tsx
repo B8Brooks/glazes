@@ -2,24 +2,45 @@
 
 import { useState, useTransition } from "react";
 import { mixBatch } from "@/lib/actions";
-import { gramsForBatch, VOLUME_UNITS, type VolumeUnit } from "@/lib/units";
+import {
+  gramsForBatch,
+  formatWeight,
+  formatVolume,
+  roundTo,
+  VOLUME_UNITS,
+  type DisplayUnit,
+  type VolumeUnit,
+} from "@/lib/units";
 
 type Line = {
+  ingredientId: number;
   name: string;
   percentage: number;
   availableGrams: number;
+  displayUnit: string;
+};
+
+type Bucket = {
+  name: string;
+  volumeMl: number;
+  displayVolumeUnit: string;
 };
 
 export function MixBatchPanel({
   recipeId,
+  recipeName,
   lines,
+  bucket,
 }: {
   recipeId: number;
+  recipeName: string;
   lines: Line[];
+  bucket: Bucket | null;
 }) {
   const [batchInput, setBatchInput] = useState("1000");
   const [volumeInput, setVolumeInput] = useState("");
   const [volumeUnit, setVolumeUnit] = useState<VolumeUnit>("quart");
+  const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -27,15 +48,33 @@ export function MixBatchPanel({
   const batchGrams = parseFloat(batchInput);
   const valid = Number.isFinite(batchGrams) && batchGrams > 0;
 
+  // Total needed per ingredient — if the same material appears on two lines
+  // (older recipes allowed it), the shortage check uses the combined amount.
+  const neededByIngredient = new Map<number, number>();
+  for (const l of lines) {
+    const needed = valid ? gramsForBatch(l.percentage, batchGrams) : 0;
+    neededByIngredient.set(
+      l.ingredientId,
+      (neededByIngredient.get(l.ingredientId) ?? 0) + needed
+    );
+  }
+
   const preview = lines.map((l) => {
     const needed = valid ? gramsForBatch(l.percentage, batchGrams) : 0;
-    return { ...l, needed, short: needed > l.availableGrams };
+    const neededTotal = neededByIngredient.get(l.ingredientId) ?? needed;
+    return {
+      ...l,
+      needed,
+      short: l.availableGrams > 0 && neededTotal > l.availableGrams,
+      uncounted: l.availableGrams === 0,
+      negative: l.availableGrams < 0,
+    };
   });
+  const totalGrams = preview.reduce((s, p) => s + p.needed, 0);
   const anyShort = preview.some((p) => p.short);
 
   function onMix() {
     setError(null);
-    setDone(false);
     const producedVolume = parseFloat(volumeInput);
     startTransition(async () => {
       try {
@@ -46,8 +85,10 @@ export function MixBatchPanel({
             ? producedVolume
             : undefined,
           producedUnit: volumeUnit,
+          notes: notes.trim() || null,
         });
         setDone(true);
+        setNotes("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not mix batch.");
       }
@@ -100,7 +141,12 @@ export function MixBatchPanel({
           ))}
         </select>
         <span className="w-full text-xs text-stone-500 sm:w-auto">
-          Adds to this glaze&apos;s bucket on the Glazes page.
+          {bucket
+            ? `Adds to bucket: ${bucket.name} (${formatVolume(
+                bucket.volumeMl,
+                bucket.displayVolumeUnit as VolumeUnit
+              )} on hand).`
+            : `Will start a new bucket named "${recipeName}".`}
         </span>
       </label>
 
@@ -113,52 +159,98 @@ export function MixBatchPanel({
           </tr>
         </thead>
         <tbody>
-          {preview.map((p) => (
-            <tr key={p.name} className="border-t border-stone-100">
+          {preview.map((p, i) => (
+            <tr key={i} className="border-t border-stone-100">
               <td className="py-1.5 text-stone-800">{p.name}</td>
               <td className="py-1.5 text-right tabular-nums text-stone-800">
                 {p.needed.toFixed(1)} g
               </td>
               <td
                 className={`py-1.5 text-right tabular-nums ${
-                  p.short ? "font-semibold text-red-600" : "text-stone-500"
+                  p.short || p.negative
+                    ? "font-semibold text-red-600"
+                    : "text-stone-500"
                 }`}
               >
-                {p.availableGrams.toFixed(0)} g
-                {p.short && (
-                  <span className="block text-xs font-normal">not enough</span>
+                {p.uncounted ? (
+                  <span className="text-stone-400">not counted yet</span>
+                ) : (
+                  <>
+                    {formatWeight(p.availableGrams, p.displayUnit as DisplayUnit)}
+                    {p.short && (
+                      <span className="block text-xs font-normal">
+                        not enough
+                      </span>
+                    )}
+                    {p.negative && (
+                      <span className="block text-xs font-normal">
+                        check this bag
+                      </span>
+                    )}
+                  </>
                 )}
               </td>
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-stone-200 font-semibold text-stone-900">
+            <td className="py-1.5">Total to weigh</td>
+            <td className="py-1.5 text-right tabular-nums">
+              {roundTo(totalGrams, 1)} g
+            </td>
+            <td />
+          </tr>
+        </tfoot>
       </table>
 
       {anyShort && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          You may not have enough of the materials shown in red. You can still
-          mix — just update your inventory if your stock is correct.
+          You may not have enough of the materials marked &ldquo;not
+          enough&rdquo;. You can still mix — just update your inventory if your
+          stock is correct.
         </p>
       )}
+
+      <label className="mt-3 block">
+        <span className="text-sm font-medium text-stone-700">
+          Notes for this batch (optional)
+        </span>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="Water added, sieve mesh, how it looked…"
+          className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
+        />
+      </label>
 
       {error && (
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
       )}
-      {done && (
-        <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
-          Batch mixed and inventory updated. See the history below to undo.
-        </p>
+      {done ? (
+        <div className="mt-4 space-y-2">
+          <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+            Batch mixed and inventory updated. See the history below to undo.
+          </p>
+          <button
+            onClick={() => setDone(false)}
+            className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+          >
+            Mix another batch?
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onMix}
+          disabled={!valid || isPending}
+          className="mt-4 rounded-lg bg-stone-800 px-4 py-2 font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+        >
+          {isPending ? "Mixing…" : "Mix this batch"}
+        </button>
       )}
-
-      <button
-        onClick={onMix}
-        disabled={!valid || isPending}
-        className="mt-4 rounded-lg bg-stone-800 px-4 py-2 font-medium text-white hover:bg-stone-700 disabled:opacity-50"
-      >
-        {isPending ? "Mixing…" : "Mix this batch"}
-      </button>
     </div>
   );
 }

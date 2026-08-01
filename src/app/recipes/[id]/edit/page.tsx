@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { ingredients, recipeIngredients, recipes } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { RecipeEntryForm } from "@/components/RecipeEntryForm";
+import { BackLink } from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function EditRecipePage({
 
   return (
     <div className="space-y-5">
+      <BackLink href={`/recipes/${recipe.id}`} label="Back to recipe" />
       <h1 className="text-2xl font-bold text-stone-900">Edit recipe</h1>
       <RecipeEntryForm
         recipe={{

@@ -49,7 +49,8 @@ export default function HelpPage() {
           </h1>
           <p className="mt-1 text-stone-600 print:text-sm">
             Everything here is safe to try — the app always asks before
-            deleting anything, and mixing can always be undone.
+            deleting anything, and a mixed batch can be undone from its recipe
+            page.
           </p>
         </div>
         <PrintButton />
@@ -75,7 +76,7 @@ export default function HelpPage() {
         />
       </Section>
 
-      <Section number={2} title="What the four tabs are">
+      <Section number={2} title="What the tabs are">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <B>Recipes</B> — your recipe cards, typed in. Each one lists its
@@ -91,6 +92,9 @@ export default function HelpPage() {
           </li>
           <li>
             <B>Backup</B> — downloads a copy of everything, for safekeeping.
+          </li>
+          <li>
+            <B>Help</B> — these instructions, whenever you need them.
           </li>
         </ul>
       </Section>
@@ -139,13 +143,19 @@ export default function HelpPage() {
               that glaze&apos;s bucket for you.
             </>,
             <>
+              Jot anything worth remembering in <B>Notes for this batch</B> —
+              how much water you added, what sieve you used, how it looked.
+              It&apos;s saved with the batch.
+            </>,
+            <>
               Tap <B>Mix this batch</B>. The materials you used are subtracted
               from your inventory automatically.
             </>,
             <>
-              Changed your mind or made a mistake? Every batch is listed under{" "}
-              <B>Recent batches</B> with an <B>Undo</B> button that puts
-              everything back.
+              Changed your mind or made a mistake? Your recent batches are
+              listed under <B>Recent batches</B> with an <B>Undo</B> button
+              that puts everything back. For anything older, just type the
+              correct amounts back in.
             </>,
           ]}
         />
@@ -223,8 +233,9 @@ export default function HelpPage() {
             it couldn&apos;t do something — nothing is broken.
           </li>
           <li>
-            Stuck or something looks odd? <B>Call Brooks.</B> Nothing you tap
-            can ruin your data.
+            Stuck or something looks odd? <B>Call Brooks.</B> The app asks
+            before deleting anything, and there&apos;s always a backup to fall
+            back on.
           </li>
         </ul>
       </Section>

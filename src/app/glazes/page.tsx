@@ -2,20 +2,21 @@ import Link from "next/link";
 import { db } from "@/db";
 import { glazes, recipes } from "@/db/schema";
 import { asc, eq, ilike } from "drizzle-orm";
-import { formatVolume, VOLUME_UNITS, type VolumeUnit } from "@/lib/units";
+import { formatVolume, type VolumeUnit } from "@/lib/units";
 import { statusBadgeClass } from "@/lib/glazeStatus";
-import { adjustGlazeVolume, deleteGlaze } from "@/lib/actions";
+import { deleteGlaze } from "@/lib/actions";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { SearchBox } from "@/components/SearchBox";
+import { QuickAdjustForm } from "@/components/QuickAdjustForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function GlazesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; error?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, error } = await searchParams;
   const query = db
     .select({
       id: glazes.id,
@@ -45,6 +46,18 @@ export default async function GlazesPage({
           + Add glaze
         </Link>
       </div>
+
+      {error && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <span>{error}</span>
+          <Link
+            href="/glazes"
+            className="shrink-0 font-medium text-amber-900 hover:underline"
+          >
+            Dismiss
+          </Link>
+        </div>
+      )}
 
       <SearchBox placeholder="Find a glaze…" />
 
@@ -98,50 +111,7 @@ export default async function GlazesPage({
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-stone-100 pt-3">
-                  <form
-                    action={adjustGlazeVolume}
-                    className="flex items-end gap-2"
-                  >
-                    <input type="hidden" name="id" value={g.id} />
-                    <label className="text-xs text-stone-500">
-                      Amount
-                      <input
-                        name="amount"
-                        type="number"
-                        step="any"
-                        min="0"
-                        placeholder="0"
-                        className="mt-1 block w-20 rounded-lg border border-stone-300 px-2 py-2 text-sm"
-                      />
-                    </label>
-                    <select
-                      name="unit"
-                      defaultValue={unit}
-                      className="rounded-lg border border-stone-300 px-2 py-2 text-sm"
-                    >
-                      {VOLUME_UNITS.map((u) => (
-                        <option key={u.value} value={u.value}>
-                          {u.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="submit"
-                      name="direction"
-                      value="use"
-                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
-                    >
-                      Use
-                    </button>
-                    <button
-                      type="submit"
-                      name="direction"
-                      value="add"
-                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
-                    >
-                      Add
-                    </button>
-                  </form>
+                  <QuickAdjustForm glazeId={g.id} defaultUnit={unit} />
 
                   <div className="ml-auto flex items-center gap-1">
                     <Link

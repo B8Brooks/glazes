@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { glazes, recipes } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { GlazeForm } from "@/components/GlazeForm";
+import { BackLink } from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function EditGlazePage({
 
   return (
     <div className="space-y-5">
+      <BackLink href="/glazes" label="Glazes" />
       <h1 className="text-2xl font-bold text-stone-900">Edit glaze</h1>
       <GlazeForm glaze={glaze} recipes={recipeList} />
     </div>

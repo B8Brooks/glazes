@@ -1,5 +1,6 @@
-import { DISPLAY_UNITS, fromGrams, type DisplayUnit } from "@/lib/units";
+import { fromGrams, type DisplayUnit } from "@/lib/units";
 import { createMaterial, updateMaterial } from "@/lib/actions";
+import { AmountWithUnit } from "@/components/AmountWithUnit";
 import type { Ingredient } from "@/db/schema";
 import Link from "next/link";
 
@@ -33,47 +34,18 @@ export function MaterialForm({ material }: { material?: Ingredient }) {
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="text-sm font-medium text-stone-700">
-            Amount on hand
-          </span>
-          <input
-            name="quantity"
-            type="number"
-            step="any"
-            min="0"
-            defaultValue={quantity}
-            placeholder="0"
-            className={inputClass}
-          />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium text-stone-700">Unit</span>
-          <select name="displayUnit" defaultValue={unit} className={inputClass}>
-            {DISPLAY_UNITS.map((u) => (
-              <option key={u.value} value={u.value}>
-                {u.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <label className="block">
-        <span className="text-sm font-medium text-stone-700">
-          Reorder when below (optional, same unit)
-        </span>
-        <input
-          name="reorderThreshold"
-          type="number"
-          step="any"
-          min="0"
-          defaultValue={threshold}
-          placeholder="e.g. 5"
-          className={inputClass}
-        />
-      </label>
+      <AmountWithUnit
+        kind="weight"
+        amountName="quantity"
+        unitName="displayUnit"
+        initialAmount={quantity}
+        initialUnit={unit}
+        amountLabel="Amount on hand"
+        required={!editing}
+        secondName="reorderThreshold"
+        secondLabel="Reorder when below (optional, same unit)"
+        secondInitial={threshold}
+      />
 
       <label className="block">
         <span className="text-sm font-medium text-stone-700">

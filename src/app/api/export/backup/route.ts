@@ -12,7 +12,8 @@ import { datedFilename } from "@/lib/csv";
 export const dynamic = "force-dynamic";
 
 // A complete, lossless snapshot of every table — the file to restore from if
-// ever needed.
+// ever needed. All reads run in one REPEATABLE READ transaction so the file
+// is internally consistent even if a batch is being mixed at the same moment.
 export async function GET() {
   const [
     ingredientRows,
@@ -21,14 +22,17 @@ export async function GET() {
     glazeRows,
     batchRows,
     batchLineRows,
-  ] = await Promise.all([
-    db.select().from(ingredients),
-    db.select().from(recipes),
-    db.select().from(recipeIngredients),
-    db.select().from(glazes),
-    db.select().from(batches),
-    db.select().from(batchLines),
-  ]);
+  ] = await db.transaction(
+    async (tx) => [
+      await tx.select().from(ingredients),
+      await tx.select().from(recipes),
+      await tx.select().from(recipeIngredients),
+      await tx.select().from(glazes),
+      await tx.select().from(batches),
+      await tx.select().from(batchLines),
+    ],
+    { isolationLevel: "repeatable read", accessMode: "read only" }
+  );
 
   const backup = {
     exportedAt: new Date().toISOString(),

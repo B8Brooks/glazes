@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "@/db";
 import { glazes, ingredients } from "@/db/schema";
-import { and, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, inArray, isNotNull, or, sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +21,13 @@ export default async function Home() {
     .select({ count: sql<number>`count(*)::int` })
     .from(ingredients)
     .where(
-      and(
-        isNotNull(ingredients.reorderThresholdGrams),
-        sql`${ingredients.quantityGrams} <= ${ingredients.reorderThresholdGrams}`
+      or(
+        and(
+          isNotNull(ingredients.reorderThresholdGrams),
+          sql`${ingredients.quantityGrams} <= ${ingredients.reorderThresholdGrams}`
+        ),
+        // A bag that's run out matters even without a threshold set.
+        sql`${ingredients.quantityGrams} <= 0`
       )
     );
   const [needAttention] = await db

@@ -55,10 +55,16 @@ export function fromGrams(grams: number, unit: DisplayUnit): number {
   }
 }
 
-function round(value: number, decimals: number): number {
+/**
+ * Round for display. Keeps edit-form defaults and totals from showing float
+ * noise like 49.99999999999999 or 100.00000000000001.
+ */
+export function roundTo(value: number, decimals = 2): number {
   const f = 10 ** decimals;
   return Math.round(value * f) / f;
 }
+
+const round = roundTo;
 
 /**
  * Format a canonical gram amount for display in the chosen unit, e.g.

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveRecipe, type RecipeLineInput } from "@/lib/actions";
+import { roundTo } from "@/lib/units";
 
 type Row = { name: string; percentage: string };
 
@@ -37,6 +38,7 @@ export function RecipeEntryForm({
       : [blankRow()]
   );
   const [error, setError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // Keep one trailing blank row so there's always somewhere to type.
@@ -56,24 +58,66 @@ export function RecipeEntryForm({
     });
   }
 
-  const total = rows.reduce((sum, r) => {
-    const p = parseFloat(r.percentage);
-    return sum + (Number.isFinite(p) ? p : 0);
-  }, 0);
+  const total = roundTo(
+    rows.reduce((sum, r) => {
+      const p = parseFloat(r.percentage);
+      return sum + (Number.isFinite(p) ? p : 0);
+    }, 0),
+    2
+  );
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  // Validate loudly — a transcribed line must never silently disappear.
+  // Returns the lines to save, or null after setting an error message.
+  function collectLines(): RecipeLineInput[] | null {
+    const named = rows
+      .map((r) => ({ name: r.name.trim(), percentage: r.percentage.trim() }))
+      .filter((r) => r.name.length > 0);
+
+    if (!named.length) {
+      setError("Add at least one ingredient.");
+      return null;
+    }
+
+    const seen = new Set<string>();
+    for (const row of named) {
+      const p = parseFloat(row.percentage);
+      if (!row.percentage || !Number.isFinite(p)) {
+        setError(
+          `"${row.name}" needs a number for its percentage — use a period (8.5), not a comma.`
+        );
+        return null;
+      }
+      if (p <= 0) {
+        setError(`"${row.name}" needs a percentage greater than zero.`);
+        return null;
+      }
+      const key = row.name.toLowerCase();
+      if (seen.has(key)) {
+        setError(`"${row.name}" appears twice — combine them into one row.`);
+        return null;
+      }
+      seen.add(key);
+    }
+
+    return named.map((r) => ({ name: r.name, percentage: parseFloat(r.percentage) }));
+  }
+
+  function save(saveAndNew: boolean) {
     setError(null);
-    const lines: RecipeLineInput[] = rows
-      .map((r) => ({ name: r.name.trim(), percentage: parseFloat(r.percentage) }))
-      .filter((r) => r.name.length > 0 && Number.isFinite(r.percentage));
-
+    setSavedMessage(null);
     if (!name.trim()) return setError("Please give the glaze a name.");
-    if (!lines.length) return setError("Add at least one ingredient.");
+    const lines = collectLines();
+    if (!lines) return;
 
     startTransition(async () => {
       try {
-        await saveRecipe({ id: recipe?.id, name, notes, lines });
+        await saveRecipe({ id: recipe?.id, name, notes, lines, saveAndNew });
+        if (saveAndNew) {
+          setSavedMessage(`Saved "${name.trim()}" ✓ — ready for the next card.`);
+          setName("");
+          setNotes("");
+          setRows([blankRow()]);
+        }
       } catch (err) {
         // redirect() throws a special NEXT_REDIRECT error on success — let it pass.
         if (err instanceof Error && err.message.includes("NEXT_REDIRECT")) {
@@ -85,7 +129,13 @@ export function RecipeEntryForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        save(false);
+      }}
+      className="space-y-5"
+    >
       <datalist id="known-ingredients">
         {knownIngredients.map((n) => (
           <option key={n} value={n} />
@@ -163,8 +213,13 @@ export function RecipeEntryForm({
           {error}
         </p>
       )}
+      {savedMessage && (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+          {savedMessage}
+        </p>
+      )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
           disabled={isPending}
@@ -172,6 +227,16 @@ export function RecipeEntryForm({
         >
           {isPending ? "Saving…" : "Save recipe"}
         </button>
+        {!recipe && (
+          <button
+            type="button"
+            onClick={() => save(true)}
+            disabled={isPending}
+            className="rounded-lg border border-stone-300 px-4 py-2 font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+          >
+            Save &amp; add another
+          </button>
+        )}
         <button
           type="button"
           onClick={() => router.back()}

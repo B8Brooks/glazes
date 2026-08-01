@@ -1,6 +1,7 @@
-import { VOLUME_UNITS, fromMl, type VolumeUnit } from "@/lib/units";
+import { fromMl, type VolumeUnit } from "@/lib/units";
 import { GLAZE_STATUSES } from "@/lib/glazeStatus";
 import { createGlaze, updateGlaze } from "@/lib/actions";
+import { AmountWithUnit } from "@/components/AmountWithUnit";
 import type { Glaze } from "@/db/schema";
 import Link from "next/link";
 
@@ -33,36 +34,15 @@ export function GlazeForm({
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="text-sm font-medium text-stone-700">
-            Amount on hand
-          </span>
-          <input
-            name="volume"
-            type="number"
-            step="any"
-            min="0"
-            defaultValue={volume}
-            placeholder="0"
-            className={inputClass}
-          />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium text-stone-700">Unit</span>
-          <select
-            name="displayVolumeUnit"
-            defaultValue={unit}
-            className={inputClass}
-          >
-            {VOLUME_UNITS.map((u) => (
-              <option key={u.value} value={u.value}>
-                {u.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <AmountWithUnit
+        kind="volume"
+        amountName="volume"
+        unitName="displayVolumeUnit"
+        initialAmount={volume}
+        initialUnit={unit}
+        amountLabel="Amount on hand"
+        required={!editing}
+      />
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">

@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { ingredients } from "@/db/schema";
 import { asc } from "drizzle-orm";
 import { RecipeEntryForm } from "@/components/RecipeEntryForm";
+import { BackLink } from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export default async function NewRecipePage() {
 
   return (
     <div className="space-y-5">
+      <BackLink href="/recipes" label="Recipes" />
       <h1 className="text-2xl font-bold text-stone-900">New recipe</h1>
       <RecipeEntryForm knownIngredients={known.map((k) => k.name)} />
     </div>

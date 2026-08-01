@@ -44,6 +44,8 @@ import {
   saveRecipe,
   adjustGlazeVolume,
   deleteMaterial,
+  updateMaterial,
+  addStock,
 } from "./actions";
 
 // Integration tests need a real Postgres. Skipped when DATABASE_URL is unset
@@ -155,14 +157,17 @@ describe.skipIf(!hasDb)("action flows (integration)", () => {
     expect(await db.select().from(glazes).where(eq(glazes.id, linked[0].id)).then((r) => r[0].volumeMl)).toBeCloseTo(0, 6);
   });
 
-  it("saveRecipe auto-creates a new ingredient only once (case-insensitive)", async () => {
+  it("saveRecipe auto-creates a new ingredient and reuses it case-insensitively", async () => {
     await ignoreRedirect(
       saveRecipe({
         name: "New Glaze",
-        lines: [
-          { name: "Nepheline Syenite", percentage: 50 },
-          { name: "nepheline syenite", percentage: 50 }, // different case, same material
-        ],
+        lines: [{ name: "Nepheline Syenite", percentage: 50 }],
+      })
+    );
+    await ignoreRedirect(
+      saveRecipe({
+        name: "Second Glaze",
+        lines: [{ name: "nepheline syenite", percentage: 40 }], // different case, same material
       })
     );
 
@@ -171,6 +176,114 @@ describe.skipIf(!hasDb)("action flows (integration)", () => {
       .from(ingredients)
       .where(ilike(ingredients.name, "nepheline syenite"));
     expect(matches).toHaveLength(1);
+  });
+
+  it("saveRecipe rejects duplicate ingredient rows and missing percentages loudly", async () => {
+    await expect(
+      saveRecipe({
+        name: "Dup Glaze",
+        lines: [
+          { name: "Silica", percentage: 30 },
+          { name: "silica", percentage: 25 },
+        ],
+      })
+    ).rejects.toThrow(/appears twice/);
+
+    await expect(
+      saveRecipe({
+        name: "Typo Glaze",
+        lines: [{ name: "Whiting", percentage: NaN }],
+      })
+    ).rejects.toThrow(/Whiting/);
+
+    // Nothing was created by the failed saves.
+    expect(await db.select().from(recipes)).toHaveLength(0);
+  });
+
+  it("updateMaterial with a blank amount leaves the stock unchanged", async () => {
+    const [material] = await db
+      .insert(ingredients)
+      .values({ name: "Custer Feldspar", quantityGrams: 1000 })
+      .returning();
+
+    await ignoreRedirect(
+      updateMaterial(
+        fd({
+          id: material.id,
+          name: "Custer Feldspar",
+          displayUnit: "lb",
+          quantity: "",
+          reorderThreshold: "",
+        })
+      )
+    );
+
+    expect(await qtyOf(material.id)).toBe(1000);
+  });
+
+  it("addStock refuses a negative amount", async () => {
+    const [material] = await db
+      .insert(ingredients)
+      .values({ name: "Silica", quantityGrams: 500 })
+      .returning();
+
+    const url = await ignoreRedirect(
+      addStock(fd({ id: material.id, amount: -5, unit: "lb" }))
+    );
+    expect(url).toContain("/inventory?error=");
+    expect(await qtyOf(material.id)).toBe(500);
+  });
+
+  it("refilling an Empty bucket clears the status back to Good", async () => {
+    const [glaze] = await db
+      .insert(glazes)
+      .values({ name: "Apricot", volumeMl: 0, status: "Empty" })
+      .returning();
+
+    await adjustGlazeVolume(
+      fd({ id: glaze.id, amount: 1, unit: "quart", direction: "add" })
+    );
+    const after = (
+      await db.select().from(glazes).where(eq(glazes.id, glaze.id))
+    )[0];
+    expect(after.volumeMl).toBeCloseTo(toMl(1, "quart"), 6);
+    expect(after.status).toBe("Good");
+  });
+
+  it("mixBatch producing volume clears an Empty status on the linked bucket", async () => {
+    const { recipe } = await seedRecipe(40, 60);
+    const [bucket] = await db
+      .insert(glazes)
+      .values({ name: "Test Clear", recipeId: recipe.id, volumeMl: 0, status: "Empty" })
+      .returning();
+
+    await mixBatch({
+      recipeId: recipe.id,
+      batchGrams: 1000,
+      producedVolume: 1,
+      producedUnit: "quart",
+    });
+
+    const after = (
+      await db.select().from(glazes).where(eq(glazes.id, bucket.id))
+    )[0];
+    expect(after.status).toBe("Good");
+  });
+
+  it("undoing the same batch twice credits inventory only once", async () => {
+    const { feldspar, recipe } = await seedRecipe(40, 60);
+    const startFeldspar = await qtyOf(feldspar.id);
+
+    await mixBatch({ recipeId: recipe.id, batchGrams: 1000 });
+    const [batch] = await db
+      .select()
+      .from(batches)
+      .where(eq(batches.recipeId, recipe.id));
+
+    await undoBatch(fd({ batchId: batch.id, recipeId: recipe.id }));
+    await undoBatch(fd({ batchId: batch.id, recipeId: recipe.id })); // no-op
+
+    expect(await qtyOf(feldspar.id)).toBeCloseTo(startFeldspar, 6);
   });
 
   it("adjustGlazeVolume subtracts on 'use' and adds on 'add'", async () => {
