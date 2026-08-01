@@ -46,6 +46,9 @@ import {
   deleteMaterial,
   updateMaterial,
   addStock,
+  duplicateRecipe,
+  importRecipesCsv,
+  restoreBackup,
 } from "./actions";
 
 // Integration tests need a real Postgres. Skipped when DATABASE_URL is unset
@@ -268,6 +271,121 @@ describe.skipIf(!hasDb)("action flows (integration)", () => {
       await db.select().from(glazes).where(eq(glazes.id, bucket.id))
     )[0];
     expect(after.status).toBe("Good");
+  });
+
+  it("duplicateRecipe copies the lines under a unique name and opens edit", async () => {
+    const { recipe } = await seedRecipe(40, 60);
+
+    const url = await ignoreRedirect(duplicateRecipe(fd({ id: recipe.id })));
+    expect(url).toMatch(/\/recipes\/\d+\/edit$/);
+
+    const copy = await db.query.recipes.findFirst({
+      where: ilike(recipes.name, "Test Clear (copy)"),
+    });
+    expect(copy).toBeTruthy();
+    const lines = await db
+      .select()
+      .from(recipeIngredients)
+      .where(eq(recipeIngredients.recipeId, copy!.id));
+    expect(lines).toHaveLength(2);
+
+    // A second duplicate picks the next free name.
+    await ignoreRedirect(duplicateRecipe(fd({ id: recipe.id })));
+    expect(
+      await db.query.recipes.findFirst({
+        where: ilike(recipes.name, "Test Clear (copy 2)"),
+      })
+    ).toBeTruthy();
+  });
+
+  it("importRecipesCsv imports new recipes, skips existing, reports problems", async () => {
+    await db.insert(recipes).values({ name: "Existing" });
+
+    const csv = [
+      "Recipe,Ingredient,Percentage",
+      "Fresh Clear,Custer Feldspar,40",
+      "Fresh Clear,Silica,60",
+      "Existing,Whatever,10",
+      "Broken,Whiting,oops",
+    ].join("\n");
+    const formData = new FormData();
+    formData.append("file", new File([csv], "recipes.csv", { type: "text/csv" }));
+
+    const url = decodeURIComponent(
+      (await ignoreRedirect(importRecipesCsv(formData))) ?? ""
+    );
+    expect(url).toContain("Imported 1 recipe");
+    expect(url).toContain("skipped 1");
+    expect(url).toContain("Broken");
+
+    const names = (await db.select().from(recipes)).map((r) => r.name).sort();
+    expect(names).toEqual(["Existing", "Fresh Clear"]);
+
+    const fresh = await db.query.recipes.findFirst({
+      where: ilike(recipes.name, "Fresh Clear"),
+    });
+    const lines = await db
+      .select()
+      .from(recipeIngredients)
+      .where(eq(recipeIngredients.recipeId, fresh!.id));
+    expect(lines).toHaveLength(2);
+    // Its materials were auto-created in inventory.
+    expect(
+      await db
+        .select()
+        .from(ingredients)
+        .where(ilike(ingredients.name, "silica"))
+    ).toHaveLength(1);
+  });
+
+  it("restoreBackup replaces everything with the file's contents", async () => {
+    await seedRecipe(40, 60);
+    await db
+      .insert(glazes)
+      .values({ name: "Frost Green", volumeMl: toMl(2, "quart") });
+
+    const backup = {
+      version: 1,
+      tables: {
+        ingredients: await db.select().from(ingredients),
+        recipes: await db.select().from(recipes),
+        recipe_ingredients: await db.select().from(recipeIngredients),
+        glazes: await db.select().from(glazes),
+        batches: await db.select().from(batches),
+        batch_lines: await db.select().from(batchLines),
+      },
+    };
+
+    // Diverge from the snapshot: junk added, a bucket deleted.
+    await db.insert(ingredients).values({ name: "Junk", quantityGrams: 1 });
+    await db.delete(glazes);
+
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File([JSON.stringify(backup)], "backup.json", {
+        type: "application/json",
+      })
+    );
+    const url = await ignoreRedirect(restoreBackup(formData));
+    expect(url).toContain("restored=");
+
+    const ing = await db.select().from(ingredients);
+    expect(ing.map((i) => i.name).sort()).toEqual([
+      "Custer Feldspar",
+      "Silica",
+    ]);
+    const gl = await db.select().from(glazes);
+    expect(gl).toHaveLength(1);
+    expect(gl[0].name).toBe("Frost Green");
+    expect(gl[0].volumeMl).toBeCloseTo(toMl(2, "quart"), 6);
+
+    // Sequences were advanced: a fresh insert gets a brand-new id.
+    const [freshRow] = await db
+      .insert(ingredients)
+      .values({ name: "Fresh After Restore" })
+      .returning();
+    expect(freshRow.id).toBeGreaterThan(Math.max(...ing.map((i) => i.id)));
   });
 
   it("undoing the same batch twice credits inventory only once", async () => {

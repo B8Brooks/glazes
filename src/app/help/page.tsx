@@ -121,10 +121,15 @@ export default function HelpPage() {
               more than 100%.
             </>,
             <>
-              Tap <B>Save recipe</B>.
+              Tap <B>Save recipe</B> — or <B>Save &amp; add another</B> to go
+              straight to the next card.
             </>,
           ]}
         />
+        <p>
+          Have a whole spreadsheet of recipes? On the Recipes page, tap{" "}
+          <B>Import from a spreadsheet</B> and follow the example there.
+        </p>
       </Section>
 
       <Section number={4} title="Mix a batch">
@@ -170,7 +175,8 @@ export default function HelpPage() {
               quart? Type 1, pick quarts, tap <B>Use</B>.
             </>,
             <>
-              Tap <B>Edit</B> on a glaze to change anything about it — its
+              Tap a glaze&apos;s name to see its page — how much is left, which
+              batches filled it, and your notes. Tap <B>Edit</B> to change its
               name, the amount, or its consistency:{" "}
               <B>Good, Dryish, Chunky, or Empty</B>.
             </>,

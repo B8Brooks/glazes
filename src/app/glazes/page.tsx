@@ -115,7 +115,7 @@ export default async function GlazesPage({
 
                   <div className="ml-auto flex items-center gap-1">
                     <Link
-                      href={`/glazes/${g.id}`}
+                      href={`/glazes/${g.id}/edit`}
                       className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
                     >
                       Edit

@@ -19,6 +19,7 @@ import {
   type DisplayUnit,
   type VolumeUnit,
 } from "./units";
+import { parseCsv } from "./csv";
 
 function num(value: FormDataEntryValue | null): number {
   const n = parseFloat(String(value ?? ""));
@@ -363,6 +364,7 @@ export async function deleteGlaze(formData: FormData) {
   if (!id) return;
   await db.delete(glazes).where(eq(glazes.id, id));
   revalidatePath("/glazes");
+  redirect("/glazes");
 }
 
 // ---------------------------------------------------------------------------
@@ -371,22 +373,11 @@ export async function deleteGlaze(formData: FormData) {
 
 export type RecipeLineInput = { name: string; percentage: number };
 
-// Create or update a recipe in one atomic call. Ingredient names that don't
-// exist yet are created automatically (at 0 stock). Validation is loud on
-// purpose: a transcribed line must never silently disappear.
-export async function saveRecipe(input: {
-  id?: number;
-  name: string;
-  notes?: string | null;
-  lines: RecipeLineInput[];
-  saveAndNew?: boolean;
-}) {
-  const name = input.name.trim();
-  if (!name) throw new Error("Please give the glaze a name.");
-
-  // Rows that are fully blank (no name) are the form's trailing empty rows —
-  // ignore them. Anything with a name must have a usable percentage.
-  const lines = input.lines
+// Loud validation shared by the entry form save, CSV import, and duplication:
+// a transcribed line must never silently disappear. Rows that are fully blank
+// (no name) are ignored; anything with a name must have a usable percentage.
+function validateRecipeLines(raw: RecipeLineInput[]): RecipeLineInput[] {
+  const lines = raw
     .map((l) => ({ name: l.name.trim(), percentage: Number(l.percentage) }))
     .filter((l) => l.name.length > 0);
 
@@ -412,16 +403,67 @@ export async function saveRecipe(input: {
     seen.add(key);
   }
 
+  return lines;
+}
+
+async function recipeNameTaken(name: string, excludeId?: number) {
   const clash = await db
     .select({ id: recipes.id })
     .from(recipes)
     .where(
-      input.id
-        ? and(ilike(recipes.name, escapeLike(name)), ne(recipes.id, input.id))
+      excludeId
+        ? and(ilike(recipes.name, escapeLike(name)), ne(recipes.id, excludeId))
         : ilike(recipes.name, escapeLike(name))
     )
     .limit(1);
-  if (clash.length) {
+  return clash.length > 0;
+}
+
+async function insertRecipeLines(
+  tx: DbClient,
+  recipeId: number,
+  lines: RecipeLineInput[]
+) {
+  let order = 0;
+  for (const line of lines) {
+    const ingredientId = await getOrCreateIngredientId(tx, line.name);
+    if (!ingredientId) continue;
+    await tx.insert(recipeIngredients).values({
+      recipeId,
+      ingredientId,
+      percentage: line.percentage,
+      sortOrder: order++,
+    });
+  }
+}
+
+async function insertRecipeWithLines(
+  tx: DbClient,
+  input: { name: string; notes: string | null; lines: RecipeLineInput[] }
+): Promise<number> {
+  const [created] = await tx
+    .insert(recipes)
+    .values({ name: input.name, notes: input.notes })
+    .returning({ id: recipes.id });
+  await insertRecipeLines(tx, created.id, input.lines);
+  return created.id;
+}
+
+// Create or update a recipe in one atomic call. Ingredient names that don't
+// exist yet are created automatically (at 0 stock).
+export async function saveRecipe(input: {
+  id?: number;
+  name: string;
+  notes?: string | null;
+  lines: RecipeLineInput[];
+  saveAndNew?: boolean;
+}) {
+  const name = input.name.trim();
+  if (!name) throw new Error("Please give the glaze a name.");
+
+  const lines = validateRecipeLines(input.lines);
+
+  if (await recipeNameTaken(name, input.id)) {
     throw new Error(
       `You already have a recipe called "${name}" — edit that one, or give this a different name.`
     );
@@ -438,23 +480,12 @@ export async function saveRecipe(input: {
       await tx
         .delete(recipeIngredients)
         .where(eq(recipeIngredients.recipeId, recipeId));
+      await insertRecipeLines(tx, recipeId, lines);
     } else {
-      const created = await tx
-        .insert(recipes)
-        .values({ name, notes: input.notes ?? null })
-        .returning({ id: recipes.id });
-      recipeId = created[0].id;
-    }
-
-    let order = 0;
-    for (const line of lines) {
-      const ingredientId = await getOrCreateIngredientId(tx, line.name);
-      if (!ingredientId) continue;
-      await tx.insert(recipeIngredients).values({
-        recipeId,
-        ingredientId,
-        percentage: line.percentage,
-        sortOrder: order++,
+      recipeId = await insertRecipeWithLines(tx, {
+        name,
+        notes: input.notes ?? null,
+        lines,
       });
     }
   });
@@ -473,6 +504,146 @@ export async function deleteRecipe(formData: FormData) {
   await db.delete(recipes).where(eq(recipes.id, id));
   revalidatePath("/recipes");
   redirect("/recipes");
+}
+
+// Copy a recipe as the starting point for a variation ("+2% copper") without
+// touching the original. Lands on the copy's edit screen.
+export async function duplicateRecipe(formData: FormData) {
+  const id = num(formData.get("id"));
+  if (!id) return;
+
+  const original = await db.query.recipes.findFirst({
+    where: eq(recipes.id, id),
+  });
+  if (!original) return;
+
+  const lines = await db
+    .select({
+      name: ingredients.name,
+      percentage: recipeIngredients.percentage,
+    })
+    .from(recipeIngredients)
+    .innerJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
+    .where(eq(recipeIngredients.recipeId, id))
+    .orderBy(asc(recipeIngredients.sortOrder));
+
+  let copyName = `${original.name} (copy)`;
+  for (let n = 2; await recipeNameTaken(copyName); n++) {
+    copyName = `${original.name} (copy ${n})`;
+  }
+
+  let newId = 0;
+  await db.transaction(async (tx) => {
+    newId = await insertRecipeWithLines(tx, {
+      name: copyName,
+      notes: original.notes,
+      lines,
+    });
+  });
+
+  revalidatePath("/recipes");
+  redirect(`/recipes/${newId}/edit`);
+}
+
+// Bulk-import recipes from a spreadsheet saved as CSV. The columns match our
+// own recipes export (Recipe / Ingredient / Percentage, notes optional), so an
+// exported file re-imports cleanly. Existing recipe names are skipped; a
+// problem in one recipe never sinks the others.
+export async function importRecipesCsv(formData: FormData) {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    errorRedirect("/recipes/import", "Choose a CSV file first.");
+  }
+
+  let rows: string[][];
+  try {
+    rows = parseCsv(await file.text());
+  } catch {
+    errorRedirect("/recipes/import", "That file couldn't be read as a CSV.");
+  }
+  if (rows.length < 2) {
+    errorRedirect(
+      "/recipes/import",
+      "The file needs a header row plus at least one recipe row."
+    );
+  }
+
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const recipeCol = header.indexOf("recipe");
+  const ingredientCol = header.indexOf("ingredient");
+  const percentageCol = header.indexOf("percentage");
+  const notesCol = header.findIndex((h) => h === "recipe notes" || h === "notes");
+  if (recipeCol === -1 || ingredientCol === -1 || percentageCol === -1) {
+    errorRedirect(
+      "/recipes/import",
+      'The header row must include columns named "Recipe", "Ingredient", and "Percentage".'
+    );
+  }
+
+  // Group data rows into recipes, preserving first-seen order.
+  const grouped = new Map<
+    string,
+    { name: string; notes: string | null; lines: RecipeLineInput[] }
+  >();
+  for (const row of rows.slice(1)) {
+    const recipeName = (row[recipeCol] ?? "").trim();
+    if (!recipeName) continue;
+    const key = recipeName.toLowerCase();
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        name: recipeName,
+        notes: notesCol >= 0 ? (row[notesCol] ?? "").trim() || null : null,
+        lines: [],
+      });
+    }
+    const ingredientName = (row[ingredientCol] ?? "").trim();
+    if (!ingredientName) continue;
+    grouped.get(key)!.lines.push({
+      name: ingredientName,
+      percentage: parseFloat((row[percentageCol] ?? "").trim()),
+    });
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  const problems: string[] = [];
+
+  for (const recipe of grouped.values()) {
+    if (await recipeNameTaken(recipe.name)) {
+      skipped++;
+      continue;
+    }
+    try {
+      const lines = validateRecipeLines(recipe.lines);
+      if (!lines.length) {
+        throw new Error("has no ingredient rows.");
+      }
+      await db.transaction(async (tx) => {
+        await insertRecipeWithLines(tx, {
+          name: recipe.name,
+          notes: recipe.notes,
+          lines,
+        });
+      });
+      imported++;
+    } catch (err) {
+      problems.push(
+        `${recipe.name}: ${err instanceof Error ? err.message : "could not import"}`
+      );
+    }
+  }
+
+  revalidatePath("/recipes");
+  revalidatePath("/inventory");
+
+  const parts = [
+    `Imported ${imported} ${imported === 1 ? "recipe" : "recipes"}`,
+    skipped ? `skipped ${skipped} already in the app` : null,
+    problems.length
+      ? `${problems.length} had problems — ${problems.slice(0, 3).join(" · ")}`
+      : null,
+  ].filter(Boolean);
+  redirect(`/recipes/import?done=${encodeURIComponent(parts.join(" · "))}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +749,7 @@ export async function mixBatch(input: {
 
   revalidatePath("/inventory");
   revalidatePath("/glazes");
+  revalidatePath("/batches");
   revalidatePath(`/recipes/${recipeId}`);
 }
 
@@ -628,5 +800,156 @@ export async function undoBatch(formData: FormData) {
 
   revalidatePath("/inventory");
   revalidatePath("/glazes");
+  revalidatePath("/batches");
   if (recipeId) revalidatePath(`/recipes/${recipeId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Restore from a backup file (full replace)
+// ---------------------------------------------------------------------------
+
+type BackupFile = {
+  version: number;
+  tables: {
+    ingredients: Record<string, unknown>[];
+    recipes: Record<string, unknown>[];
+    recipe_ingredients: Record<string, unknown>[];
+    glazes: Record<string, unknown>[];
+    batches: Record<string, unknown>[];
+    batch_lines: Record<string, unknown>[];
+  };
+};
+
+function isBackupFile(data: unknown): data is BackupFile {
+  if (typeof data !== "object" || data === null) return false;
+  const d = data as Partial<BackupFile>;
+  if (d.version !== 1 || typeof d.tables !== "object" || d.tables === null) {
+    return false;
+  }
+  return [
+    "ingredients",
+    "recipes",
+    "recipe_ingredients",
+    "glazes",
+    "batches",
+    "batch_lines",
+  ].every((key) => Array.isArray((d.tables as Record<string, unknown>)[key]));
+}
+
+// JSON turns Date columns into ISO strings; convert them back before insert.
+function reviveDates<T extends Record<string, unknown>>(
+  rows: T[],
+  fields: string[]
+): T[] {
+  return rows.map((row) => {
+    const out: Record<string, unknown> = { ...row };
+    for (const f of fields) {
+      if (typeof out[f] === "string") out[f] = new Date(out[f] as string);
+    }
+    return out as T;
+  });
+}
+
+// Replace EVERYTHING with the contents of a previously downloaded backup
+// file. Runs in one transaction: if anything fails, nothing changes.
+export async function restoreBackup(formData: FormData) {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    errorRedirect("/backup", "Choose a backup file first.");
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    data = null;
+  }
+  if (!isBackupFile(data)) {
+    errorRedirect(
+      "/backup",
+      "That file doesn't look like a Glazes backup — it should be the JSON file downloaded from this page."
+    );
+  }
+  const t = data.tables;
+
+  let ok = true;
+  try {
+    await db.transaction(async (tx) => {
+      // Delete children before parents, insert parents before children.
+      await tx.delete(batchLines);
+      await tx.delete(batches);
+      await tx.delete(recipeIngredients);
+      await tx.delete(glazes);
+      await tx.delete(recipes);
+      await tx.delete(ingredients);
+
+      const dateCols = ["createdAt", "updatedAt", "mixedAt"];
+      if (t.ingredients.length) {
+        await tx
+          .insert(ingredients)
+          .values(reviveDates(t.ingredients, dateCols) as typeof ingredients.$inferInsert[]);
+      }
+      if (t.recipes.length) {
+        await tx
+          .insert(recipes)
+          .values(reviveDates(t.recipes, dateCols) as typeof recipes.$inferInsert[]);
+      }
+      if (t.recipe_ingredients.length) {
+        await tx
+          .insert(recipeIngredients)
+          .values(t.recipe_ingredients as typeof recipeIngredients.$inferInsert[]);
+      }
+      if (t.glazes.length) {
+        await tx
+          .insert(glazes)
+          .values(reviveDates(t.glazes, dateCols) as typeof glazes.$inferInsert[]);
+      }
+      if (t.batches.length) {
+        await tx
+          .insert(batches)
+          .values(reviveDates(t.batches, dateCols) as typeof batches.$inferInsert[]);
+      }
+      if (t.batch_lines.length) {
+        await tx
+          .insert(batchLines)
+          .values(t.batch_lines as typeof batchLines.$inferInsert[]);
+      }
+
+      // The rows kept their original ids, so bump each serial sequence past
+      // the highest id or the next insert would collide.
+      for (const table of [
+        "ingredients",
+        "recipes",
+        "recipe_ingredients",
+        "glazes",
+        "batches",
+        "batch_lines",
+      ]) {
+        await tx.execute(
+          sql.raw(
+            `SELECT setval(pg_get_serial_sequence('${table}', 'id'), COALESCE((SELECT MAX(id) FROM "${table}"), 0) + 1, false)`
+          )
+        );
+      }
+    });
+  } catch {
+    ok = false;
+  }
+  if (!ok) {
+    errorRedirect(
+      "/backup",
+      "Restore failed — nothing was changed. Check the file and try again."
+    );
+  }
+
+  revalidatePath("/");
+  revalidatePath("/inventory");
+  revalidatePath("/glazes");
+  revalidatePath("/recipes");
+  revalidatePath("/batches");
+  redirect(
+    `/backup?restored=${encodeURIComponent(
+      `${t.ingredients.length} materials, ${t.recipes.length} recipes, ${t.glazes.length} glazes, and ${t.batches.length} batches`
+    )}`
+  );
 }

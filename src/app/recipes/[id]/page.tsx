@@ -12,7 +12,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { MixBatchPanel } from "@/components/MixBatchPanel";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { BackLink } from "@/components/BackLink";
-import { deleteRecipe, undoBatch } from "@/lib/actions";
+import { deleteRecipe, duplicateRecipe, undoBatch } from "@/lib/actions";
 import { formatVolume, roundTo, type VolumeUnit } from "@/lib/units";
 
 export const dynamic = "force-dynamic";
@@ -105,6 +105,15 @@ export default async function RecipeDetailPage({
           >
             Edit
           </Link>
+          <form action={duplicateRecipe}>
+            <input type="hidden" name="id" value={recipe.id} />
+            <button
+              type="submit"
+              className="rounded-lg border border-stone-300 px-3 py-2 font-medium text-stone-700 hover:bg-stone-100"
+            >
+              Duplicate
+            </button>
+          </form>
           <form action={deleteRecipe}>
             <input type="hidden" name="id" value={recipe.id} />
             <ConfirmButton
@@ -158,9 +167,17 @@ export default async function RecipeDetailPage({
 
       {history.length > 0 && (
         <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
-          <h2 className="text-lg font-semibold text-stone-900">
-            Recent batches
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-stone-900">
+              Recent batches
+            </h2>
+            <Link
+              href="/batches"
+              className="text-sm text-stone-500 hover:underline"
+            >
+              See all batches →
+            </Link>
+          </div>
           <ul className="mt-2 divide-y divide-stone-100">
             {history.map((b) => (
               <li key={b.id} className="py-2 text-sm">

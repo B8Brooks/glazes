@@ -66,7 +66,7 @@ export default async function Home() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Link
           href="/recipes"
           className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm hover:border-stone-300 hover:shadow"
@@ -97,6 +97,19 @@ export default async function Home() {
           <p className="mt-1 text-sm text-stone-600">
             Raw dry materials in pounds. Mixing a batch subtracts what you used
             automatically.
+          </p>
+        </Link>
+
+        <Link
+          href="/batches"
+          className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm hover:border-stone-300 hover:shadow"
+        >
+          <h2 className="text-lg font-semibold text-stone-900">
+            Batch history
+          </h2>
+          <p className="mt-1 text-sm text-stone-600">
+            Everything you&apos;ve mixed, with your notes — what did I mix this
+            month?
           </p>
         </Link>
       </div>

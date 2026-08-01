@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toCsv, datedFilename } from "./csv";
+import { toCsv, parseCsv, datedFilename } from "./csv";
 
 describe("toCsv", () => {
   it("quotes every field and joins with CRLF", () => {
@@ -27,6 +27,37 @@ describe("toCsv", () => {
 
   it("starts with a UTF-8 BOM for spreadsheet compatibility", () => {
     expect(toCsv(["A"], []).charCodeAt(0)).toBe(0xfeff);
+  });
+});
+
+describe("parseCsv", () => {
+  it("round-trips what toCsv produces (BOM, quotes, commas, newlines)", () => {
+    const rows = [
+      ["Shaner's Clear", 'has "quotes"', "a, comma"],
+      ["Multi\nline", "", "plain"],
+    ];
+    const parsed = parseCsv(toCsv(["A", "B", "C"], rows));
+    expect(parsed).toEqual([
+      ["A", "B", "C"],
+      ["Shaner's Clear", 'has "quotes"', "a, comma"],
+      ["Multi\nline", "", "plain"],
+    ]);
+  });
+
+  it("handles plain LF files without quoting (hand-made spreadsheets)", () => {
+    const parsed = parseCsv("Recipe,Ingredient,Percentage\nClear,Silica,30\n");
+    expect(parsed).toEqual([
+      ["Recipe", "Ingredient", "Percentage"],
+      ["Clear", "Silica", "30"],
+    ]);
+  });
+
+  it("drops fully blank lines", () => {
+    const parsed = parseCsv("A,B\r\n\r\nx,y\r\n\r\n");
+    expect(parsed).toEqual([
+      ["A", "B"],
+      ["x", "y"],
+    ]);
   });
 });
 

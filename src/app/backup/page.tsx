@@ -1,3 +1,8 @@
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { restoreBackup } from "@/lib/actions";
+
+export const dynamic = "force-dynamic";
+
 const downloadClass =
   "flex items-center justify-between rounded-xl border border-stone-200 bg-white p-4 shadow-sm hover:border-stone-300 hover:shadow";
 
@@ -24,7 +29,13 @@ function DownloadLink({
   );
 }
 
-export default function BackupPage() {
+export default async function BackupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; restored?: string }>;
+}) {
+  const { error, restored } = await searchParams;
+
   return (
     <div className="space-y-6">
       <div>
@@ -34,6 +45,18 @@ export default function BackupPage() {
           Google Drive) for peace of mind.
         </p>
       </div>
+
+      {restored && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          Restore complete: {restored} are back exactly as they were in the
+          file.
+        </div>
+      )}
+      {error && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          {error}
+        </div>
+      )}
 
       <div className="space-y-3">
         <DownloadLink
@@ -57,6 +80,36 @@ export default function BackupPage() {
           desc="A full, exact copy of everything — keep this file safe; Brooks can restore everything from it."
         />
       </div>
+
+      <form
+        action={restoreBackup}
+        className="rounded-xl border border-red-200 bg-red-50/50 p-4"
+      >
+        <h2 className="font-semibold text-stone-900">
+          Restore from a backup file
+        </h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Puts everything back exactly as it was in a Complete backup (JSON)
+          file. This <strong>replaces all current data</strong> — normally
+          Brooks does this. Download a fresh backup first, just in case.
+        </p>
+        <label className="mt-3 block text-sm font-medium text-stone-700">
+          Backup file
+          <input
+            type="file"
+            name="file"
+            accept=".json,application/json"
+            required
+            className="mt-2 block w-full text-sm text-stone-600 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-stone-700"
+          />
+        </label>
+        <ConfirmButton
+          message="Restore from this file? EVERYTHING currently in the app will be replaced with the file's contents. This can't be undone."
+          className="mt-4 rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-600"
+        >
+          Replace everything with this file
+        </ConfirmButton>
+      </form>
 
       <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-600">
         <h2 className="font-semibold text-stone-800">Is my data safe?</h2>
