@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { asc, desc, eq } from "drizzle-orm";
 import { MixBatchPanel } from "@/components/MixBatchPanel";
+import { RecipeCheckTable } from "@/components/RecipeCheckTable";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { BackLink } from "@/components/BackLink";
 import { deleteRecipe, duplicateRecipe, undoBatch } from "@/lib/actions";
@@ -147,6 +148,8 @@ export default async function RecipeDetailPage({
           </ul>
         )}
       </div>
+
+      {lines.length > 0 && <RecipeCheckTable lines={lines} />}
 
       {lines.length > 0 && (
         <MixBatchPanel

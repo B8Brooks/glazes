@@ -130,6 +130,12 @@ export default function HelpPage() {
           Have a whole spreadsheet of recipes? On the Recipes page, tap{" "}
           <B>Import from a spreadsheet</B> and follow the example there.
         </p>
+        <p>
+          After saving, the recipe&apos;s page shows a{" "}
+          <B>Check against your card</B> table with the same gram columns as
+          your printed cards (2,000 / 4,000 / 10,000 g) — compare a few numbers
+          to be sure everything went in right.
+        </p>
       </Section>
 
       <Section number={4} title="Mix a batch">
